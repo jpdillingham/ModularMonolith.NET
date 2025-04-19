@@ -1,4 +1,4 @@
-@Albums_HostAddress = http://localhost:5164
+@Albums_HostAddress = http://localhost:5211
 
 GET {{Albums_HostAddress}}/weatherforecast/
 Accept: application/json
