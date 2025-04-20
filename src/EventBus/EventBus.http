@@ -1,0 +1,6 @@
+@EventBus_HostAddress = http://localhost:5137
+
+GET {{EventBus_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

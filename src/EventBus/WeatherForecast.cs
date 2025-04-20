@@ -1,4 +1,4 @@
-namespace Host;
+namespace EventBus;
 
 public class WeatherForecast
 {
