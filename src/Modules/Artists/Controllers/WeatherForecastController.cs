@@ -7,7 +7,7 @@ using System;
 namespace Artists.Controllers;
 
 [ApiController]
-[Route("[controller]")]
+[Route("[module]/[controller]")]
 public class WeatherForecastController : ControllerBase
 {
     private static readonly string[] Summaries = new[]

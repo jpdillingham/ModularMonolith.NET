@@ -4,7 +4,7 @@ set -e
 BUILD_CONFIG="${BUILD_CONFIG:=Debug}"
 
 if [ "$1" = "--watch" ]; then
-  dothet watch --project src/Host/Host.csproj
+  dotnet watch --project src/Host/Host.csproj
 elif [ "$1" = "--publish" ]; then
   rm -rf ./dist
   dotnet restore ModularMonolith.sln

@@ -20,21 +20,28 @@ public class Program
     private static string AppName { get; } = "ModularMonolith.NET";
     public static string Version { get; } = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
     public static string Env => Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-    
+    public static bool IsLocal => Env?.Equals("Local", StringComparison.OrdinalIgnoreCase) ?? false;
+    public static bool IsTest => Env?.Equals("Test", StringComparison.OrdinalIgnoreCase) ?? false;
+
     public static async Task Main(string[] args)
     {
         var log = CreateBootstrapLogger();
 
         try
         {
+            /*
+                basic setup of an ASP.NET application; this is mostly boilerplate and can be adjusted to taste.
+
+                note that the configuration setup diverges a bit from the standard appsettings.json approach, simply
+                because *I* personally find environment variables and .env to be more straightforward to manage; it
+                doesn't have anything to do with the monolith approach.
+            */
             log.Information("{App} {Version} is initializing", AppName, Version);
             log.Information("Environment: {Env}", Env);
 
             // load environment variables from a .env file, if one is present
             // this is meant to simplify local development; we shouldn't ship a .env file in a container image
             Dotenv.Load(Path.Combine(Directory.GetParent(Assembly.GetExecutingAssembly().Location).Parent.Parent.Parent.Parent.Parent.FullName, ".env"));
-            
-            var builder = WebApplication.CreateBuilder(args);
 
             // use the built-in ASP.NET configuration pattern to source configuration details
             // from environment variables; note that all application-defined items must be prefixed
@@ -45,17 +52,18 @@ public class Program
                 .Build()
                 .Bind(config);
 
-            // make the application configuration injectable (modules must not try to source them directly)
+            var builder = WebApplication.CreateBuilder(args);
+            builder.WebHost.UseUrls($"http://*:{config.PORT}");
+
+            // make the application configuration available in the DI container
             builder.Services.AddSingleton<Configuration>(config);
-            
-            // stop background worker exceptions from killing the app
+
+            // ensure background worker exceptions don't kill the app (override default behavior)
             builder.Services.Configure<HostOptions>(options =>
             {
                 options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
             });
 
-            builder.WebHost.UseUrls($"http://*:{config.PORT}");
-            
             // configure logging
             builder.Services.AddHttpLogging(options =>
             {
@@ -73,21 +81,45 @@ public class Program
                         .Console(formatProvider: new CultureInfo("en-US"), theme: AnsiConsoleTheme.Sixteen, applyThemeToRedirectedOutput: true);
             });
 
-            builder.Services.AddControllers();
-            builder.Services.AddOpenApi();
+            /*
+                begin bootstrapping the monolith.
 
-            log.Information("Configured {Services} services", builder.Services.Count);
+                this approach uses the older ASP.NET pattern that splits service configuration (ConfigureServices())
+                and HTTP pipeline configuration (Configure()) into two steps.
+
+                this is necessary because we must configure services for all modules before we can configure the pipeline,
+                and there's simply no way we can follow the more modern ASP.NET pattern of using a single method
+                to configure both services and the pipeline in one step.
+
+                for consistency, the Host module uses the same Startup class as the other modules, and we'll use it
+                to configure the rest of the application, including all of the modules.
+            */
+
+            // instantiate the Host's startup class
+            var startup = new Startup();
+
+            // configure dependency injection/services
+            // the Host will bootstrap the modules
+            startup.ConfigureServices(builder.Services, builder.Environment);
 
             var app = builder.Build();
 
-            app.UseHttpLogging();
-            app.MapOpenApi();
-            
-            app.UseAuthorization();
-            app.MapControllers();
+            // configure the pipeline
+            startup.Configure(app, builder.Environment);
 
-            log.Information("Configured pipeline");
+            /*
+                run database migrations to aid in local development and testing scenarios
 
+                whether you'd actually want to do this is highly personal, but it's included here to make the example
+                easier to work with, and to illustrate how it would be done if you wanted to do it
+            */
+            if (IsLocal || IsTest || true)
+            {
+                using var scope = app.Services.CreateScope();
+                await startup.Migrate(scope.ServiceProvider);
+            }
+
+            // everything is configured, let's go!
             log.Information("Starting...");
             await app.RunAsync();
         }
